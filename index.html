@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SanketVani — सङ्केतवाणी</title>
+<style>
+  :root {
+    --bg:#f7f7f5; --panel:#fff; --ink:#1a1a18; --muted:#6b6b63; --line:#e2e2dc;
+    --accent:#b4530a; --good:#2f6f45; --warn:#8a5a00; --chip:#f0efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161614; --panel:#1e1e1b; --ink:#eceae4; --muted:#9a978c;
+            --line:#33332e; --accent:#e08c48; --good:#7fbf94; --warn:#d9a441;
+            --chip:#2a2a26; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55
+         ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:1040px; margin:0 auto; padding:24px 20px 64px; }
+  h1 { font-size:26px; margin:0 0 2px; letter-spacing:-.01em; }
+  h1 span { color:var(--muted); font-weight:400; }
+  .sub { color:var(--muted); margin:0 0 20px; max-width:70ch; }
+  .grid { display:grid; gap:18px; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  @media (max-width:860px) { .grid { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.07em;
+             color:var(--muted); margin:0 0 12px; font-weight:600; }
+  #stage { position:relative; background:#000; border-radius:10px; overflow:hidden;
+           aspect-ratio:4/3; }
+  #video, #overlay { position:absolute; inset:0; width:100%; height:100%; }
+  #video { object-fit:cover; transform:scaleX(-1); }
+  #overlay { transform:scaleX(-1); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  button { font:inherit; padding:9px 15px; border-radius:8px; border:1px solid var(--line);
+           background:var(--chip); color:var(--ink); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.rec { background:#a3241a; border-color:#a3241a; color:#fff; }
+  input, select, textarea { font:inherit; padding:8px 10px; border-radius:8px;
+           border:1px solid var(--line); background:var(--bg); color:var(--ink); width:100%; }
+  textarea { min-height:150px; resize:vertical; font-family:ui-monospace,
+             SFMono-Regular,Menlo,monospace; font-size:12.5px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  .status { font-size:13px; color:var(--muted); min-height:1.4em; }
+  .words { display:flex; flex-wrap:wrap; gap:8px; min-height:44px; align-items:center; }
+  .chip { display:inline-flex; flex-direction:column; gap:3px; padding:7px 11px;
+          background:var(--chip); border:1px solid var(--line); border-radius:8px; }
+  .chip b { font-weight:600; }
+  .bar { height:3px; border-radius:2px; background:var(--line); overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--good); }
+  .empty { color:var(--muted); font-style:italic; }
+  .meter { display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px;
+           color:var(--muted); margin-top:8px; }
+  .meter b { color:var(--ink); font-variant-numeric:tabular-nums; }
+  .note { border-left:3px solid var(--warn); padding:10px 14px; background:var(--panel);
+          border-radius:0 8px 8px 0; margin:18px 0 0; font-size:13.5px; color:var(--muted); }
+  .note b { color:var(--ink); }
+  .sentence { font-size:19px; line-height:1.45; margin:6px 0 0; }
+  details { margin-top:12px; } summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  .full { grid-column:1/-1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SanketVani <span>सङ्केतवाणी</span></h1>
+  <p class="sub">Indian Sign Language → recognised words → English sentence.
+     The model reads hand and body landmarks and reports the <em>content words</em>
+     it recognises; a language model turns those into a sentence.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Camera</h2>
+      <div id="stage"><video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas></div>
+      <div class="row">
+        <button id="start" class="primary">Start camera</button>
+        <button id="record" disabled>Record</button>
+        <button id="clear" disabled>Clear</button>
+      </div>
+      <p class="status" id="status">Loading model…</p>
+    </div>
+
+    <div class="card">
+      <h2>Recognised words · in signed order</h2>
+      <div class="words" id="words"><span class="empty">nothing yet</span></div>
+      <div class="meter" id="tracking"></div>
+      <div id="nearMissWrap" hidden>
+        <label style="margin-top:14px">Closest guesses, below the threshold</label>
+        <div class="words" id="nearMiss"></div>
+      </div>
+
+      <label for="threshold">Confidence threshold
+        <span id="thresholdValue" style="float:right"></span></label>
+      <input type="range" id="threshold" min="0" max="17" step="1" value="2">
+      <div class="meter" id="meter"></div>
+
+      <details>
+        <summary>Sentence writer (optional)</summary>
+        <label for="endpoint">OpenAI-compatible endpoint</label>
+        <input id="endpoint" placeholder="http://localhost:11434/v1" autocomplete="off">
+        <label for="model">Model</label>
+        <input id="model" placeholder="qwen2.5:7b" autocomplete="off">
+        <label for="apikey">API key — stored only in this browser, leave blank for local</label>
+        <input id="apikey" type="password" autocomplete="off">
+        <div class="row"><button id="generate" disabled>Write the sentence</button></div>
+      </details>
+    </div>
+
+    <div class="card full">
+      <h2>Sentence</h2>
+      <p class="sentence" id="sentence"><span class="empty">—</span></p>
+      <label for="prompt">Prompt sent to the language model</label>
+      <textarea id="prompt" readonly></textarea>
+      <div class="row"><button id="copy">Copy prompt</button></div>
+    </div>
+  </div>
+
+  <p class="note" id="honesty"></p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5/holistic.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+<script type="module">
+import { frameVector, loadWordTagger, SLOTS } from "./parity.js";
+
+const $ = (id) => document.getElementById(id);
+const say = (text) => { $("status").textContent = text; };
+
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/";
+
+let tagger, holistic, stream, recording = false, frames = [], detected = [];
+let curve = [], tracking = { pose: 0, left: 0, right: 0, total: 0 };
+
+// The tagger's own threshold was picked by maximising F1, which leaves it
+// nearly silent (about one word per clip). The slider defaults to the point
+// that gives a language model the most correct words to work with.
+const DEFAULT_THRESHOLD = 0.15;
+
+function thresholdFromSlider() {
+  return curve.length ? curve[Number($("threshold").value)].threshold : DEFAULT_THRESHOLD;
+}
+
+function renderMeter() {
+  const point = curve[Number($("threshold").value)];
+  $("thresholdValue").textContent = point.threshold.toFixed(2);
+  const right = point.words_per_clip * point.precision;
+  const wrong = point.words_per_clip - right;
+  $("meter").innerHTML =
+    `<span>measured on ${tagger.vocab.measured?.val_clips ?? "—"} held-out clips:</span>` +
+    `<span><b>${(point.precision * 100).toFixed(0)}%</b> of words correct</span>` +
+    `<span><b>${right.toFixed(1)}</b> right &amp; <b>${wrong.toFixed(1)}</b> wrong per clip</span>`;
+}
+
+function renderWords() {
+  const box = $("words");
+  if (!detected.length) {
+    box.innerHTML = '<span class="empty">nothing above the threshold</span>';
+    $("prompt").value = "";
+    $("generate").disabled = true;
+    return;
+  }
+  box.innerHTML = detected.map((d) => `
+    <span class="chip"><b>${d.word}</b>
+      <span class="bar"><i style="width:${(d.confidence * 100).toFixed(0)}%"></i></span>
+    </span>`).join("");
+  $("prompt").value = tagger.prompt(detected);
+  $("generate").disabled = false;
+}
+
+function renderTracking() {
+  if (!tracking.total) { $("tracking").innerHTML = ""; return; }
+  const pct = (n) => `${Math.round((100 * n) / tracking.total)}%`;
+  const hands = Math.max(tracking.left, tracking.right) / tracking.total;
+  // Hands are where the signs are. If they were rarely seen, nothing else
+  // about the result means anything, so say so before the user blames the model.
+  const verdict = hands >= 0.7 ? ""
+    : hands >= 0.3 ? " — hands often lost; move closer and keep them in frame"
+    : " — hands barely tracked, so the model had almost nothing to read";
+  $("tracking").innerHTML =
+    `<span>tracked: body <b>${pct(tracking.pose)}</b></span>` +
+    `<span>left hand <b>${pct(tracking.left)}</b></span>` +
+    `<span>right hand <b>${pct(tracking.right)}</b></span>` +
+    `<span style="color:var(--warn)">${verdict}</span>`;
+}
+
+async function decode() {
+  if (!frames.length) return;
+  say(`Reading ${frames.length} frames…`);
+  const threshold = thresholdFromSlider();
+  detected = await tagger.detect(frames, tagger.vocab.input.num_frames, threshold);
+  // Everything the model considered, so an empty result is explainable rather
+  // than mysterious: you can see what it was closest to and by how much.
+  const all = await tagger.detect(frames, tagger.vocab.input.num_frames, 0, 6);
+  const near = all.filter((d) => d.confidence < threshold).slice(0, 5);
+  $("nearMissWrap").hidden = near.length === 0;
+  $("nearMiss").innerHTML = near
+    .sort((a, b) => b.confidence - a.confidence)
+    .map((d) => `<span class="chip" style="opacity:.55"><b>${d.word}</b>
+       <span class="bar"><i style="width:${(d.confidence * 100).toFixed(0)}%;
+       background:var(--muted)"></i></span></span>`).join("");
+  renderWords();
+  renderTracking();
+  say(`${frames.length} frames → ${detected.length} word${detected.length === 1 ? "" : "s"}.`);
+}
+
+function draw(results) {
+  const canvas = $("overlay");
+  const video = $("video");
+  if (canvas.width !== video.videoWidth) {
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const dot = (landmarks, colour) => {
+    if (!landmarks) return;
+    ctx.fillStyle = colour;
+    for (const lm of landmarks) {
+      ctx.beginPath();
+      ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  dot(results.poseLandmarks, "rgba(255,255,255,.55)");
+  dot(results.leftHandLandmarks, "#4da3ff");
+  dot(results.rightHandLandmarks, "#ffb454");
+}
+
+async function boot() {
+  try {
+    tagger = await loadWordTagger("./sanketvani_word_tagger.onnx",
+                                  "./word_vocab.json", ort);
+  } catch (err) {
+    say(`Could not load the model: ${err.message}`);
+    return;
+  }
+  curve = (tagger.vocab.operating_curve ?? []).slice()
+    .sort((a, b) => a.threshold - b.threshold);
+  if (!curve.length) curve = [{ threshold: DEFAULT_THRESHOLD, precision: 0, words_per_clip: 0 }];
+  const slider = $("threshold");
+  slider.max = String(curve.length - 1);
+  let best = 0;
+  curve.forEach((p, i) => {
+    if (Math.abs(p.threshold - DEFAULT_THRESHOLD) <
+        Math.abs(curve[best].threshold - DEFAULT_THRESHOLD)) best = i;
+  });
+  slider.value = String(best);
+  renderMeter();
+
+  const m = tagger.vocab.metrics ?? {};
+  $("honesty").innerHTML =
+    `<b>What to expect.</b> This model recovers roughly <b>one correct content word
+     per sentence</b> out of about four — it scores ${(m.lift ?? 0).toFixed(0)}× the
+     word-frequency baseline, which is real recognition, but far from a reliable
+     translator. The word list above is the model's actual output; the sentence
+     below is a language model's guess at what those words meant. Trust the words,
+     not the sentence.`;
+
+  say(`Model ready — ${tagger.vocab.num_words} words, ` +
+      `${tagger.vocab.input.num_frames} frames per clip.`);
+  $("start").disabled = false;
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: "user" }, audio: false });
+  } catch (err) {
+    say(`Camera refused: ${err.message}`);
+    $("start").disabled = false;
+    return;
+  }
+  const video = $("video");
+  video.srcObject = stream;
+  await video.play();
+
+  holistic = new Holistic({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5/${file}`,
+  });
+  holistic.setOptions({ modelComplexity: 1, smoothLandmarks: true,
+                        refineFaceLandmarks: false, minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5 });
+  holistic.onResults((results) => {
+    draw(results);
+    if (recording) {
+      tracking.total++;
+      if (results.poseLandmarks) tracking.pose++;
+      if (results.leftHandLandmarks) tracking.left++;
+      if (results.rightHandLandmarks) tracking.right++;
+      frames.push(frameVector(results));
+      if (frames.length % 10 === 0) say(`Recording… ${frames.length} frames`);
+      if (frames.length >= 900) $("record").click();     // safety stop
+    }
+  });
+
+  const pump = async () => {
+    if (video.readyState >= 2) await holistic.send({ image: video });
+    requestAnimationFrame(pump);
+  };
+  pump();
+  $("record").disabled = false;
+  $("clear").disabled = false;
+  say("Camera running. Press Record, sign, then press Stop.");
+};
+
+$("record").onclick = async () => {
+  recording = !recording;
+  $("record").textContent = recording ? "Stop" : "Record";
+  $("record").className = recording ? "rec" : "";
+  if (recording) {
+    frames = [];
+    detected = [];
+    tracking = { pose: 0, left: 0, right: 0, total: 0 };
+    renderWords();
+    $("tracking").innerHTML = "";
+    say("Recording…");
+  } else {
+    await decode();
+  }
+};
+
+$("clear").onclick = () => {
+  frames = []; detected = [];
+  renderWords();
+  $("sentence").innerHTML = '<span class="empty">—</span>';
+  say("Cleared.");
+};
+
+$("threshold").oninput = () => { renderMeter(); };
+$("threshold").onchange = () => { if (frames.length) decode(); };
+
+$("copy").onclick = async () => {
+  if (!$("prompt").value) return;
+  await navigator.clipboard.writeText($("prompt").value);
+  say("Prompt copied — paste it into any chat model.");
+};
+
+for (const id of ["endpoint", "model", "apikey"]) {
+  try { $(id).value = localStorage.getItem(`sanketvani.${id}`) ?? ""; } catch {}
+  $(id).oninput = () => {
+    try { localStorage.setItem(`sanketvani.${id}`, $(id).value); } catch {}
+  };
+}
+
+$("generate").onclick = async () => {
+  const endpoint = $("endpoint").value.trim().replace(/\/+$/, "");
+  if (!endpoint) { say("Set an endpoint first, or copy the prompt instead."); return; }
+  $("generate").disabled = true;
+  $("sentence").textContent = "…";
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if ($("apikey").value) headers.Authorization = `Bearer ${$("apikey").value}`;
+    const res = await fetch(`${endpoint}/chat/completions`, {
+      method: "POST", headers,
+      body: JSON.stringify({
+        model: $("model").value.trim() || "qwen2.5:7b",
+        temperature: 0.2,
+        messages: [{ role: "user", content: $("prompt").value }],
+      }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`.slice(0, 200));
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    $("sentence").textContent = text || "(the model returned nothing)";
+  } catch (err) {
+    $("sentence").innerHTML = `<span class="empty">Request failed: ${err.message}</span>`;
+    say("If this is a local Ollama, start it with OLLAMA_ORIGINS=* to allow the browser.");
+  } finally {
+    $("generate").disabled = false;
+  }
+};
+
+// Debug handle: lets an automated test drive the page without a camera, and
+// lets you poke at the model from the browser console.
+window.sanketvani = {
+  get tagger() { return tagger; },
+  get frames() { return frames; },
+  get detected() { return detected; },
+  get threshold() { return thresholdFromSlider(); },
+  async run(injectedFrames) { frames = injectedFrames; await decode(); return detected; },
+};
+
+boot();
+</script>
+</body>
+</html>
